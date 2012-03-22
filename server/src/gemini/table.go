@@ -12,7 +12,7 @@ type TableData [][]interface{}
 type ColumnDatatype string
 
 const (
-    NumberDatatype  = ColumnDatatype("integer")
+    IntegerDatatype  = ColumnDatatype("integer")
     StringDatatype  = ColumnDatatype("string")
     FloatDatatype    = ColumnDatatype("float")
 )
@@ -42,7 +42,7 @@ func LoadTableFromMySQL(result *mysql.Result) (*TableInfo, error) {
              	 mysql.FIELD_TYPE_SHORT,
 	             mysql.FIELD_TYPE_LONG,
 	             mysql.FIELD_TYPE_LONGLONG:
-	            info.ColumnTypes[i] = NumberDatatype
+	            info.ColumnTypes[i] = IntegerDatatype
             case mysql.FIELD_TYPE_FLOAT,
                  mysql.FIELD_TYPE_DOUBLE:
 	            info.ColumnTypes[i] = FloatDatatype
@@ -92,7 +92,7 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
                                 
                 switch s.ColumnType(j) {
                     case sqlite.IntegerDatatype:
-                        info.ColumnTypes[j] = NumberDatatype 
+                        info.ColumnTypes[j] = IntegerDatatype 
                         colptrs[j] = new(int)
                     case sqlite.FloatDatatype:
                         info.ColumnTypes[j] = FloatDatatype 
@@ -143,4 +143,59 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
     
     info.Data = data
     return &info, nil
+}
+
+func StoreTableToSqlite(conn *sqlite.Conn , name string, tinfo *TableInfo) error {
+    queryStr := fmt.Sprintf("create table %s (", name)
+    for i := 0; i < len(tinfo.ColumnNames); i++ {
+        if i != 0 {
+            queryStr += ","
+        }
+        queryStr += tinfo.ColumnNames[i]
+        switch tinfo.ColumnTypes[i] {
+            case IntegerDatatype:
+                queryStr += fmt.Sprintf(" numeric")
+            case StringDatatype:
+                queryStr += fmt.Sprintf(" text")
+            case FloatDatatype:
+                queryStr += fmt.Sprintf(" real")
+            default:
+                return errors.New("StoreTableToSqlite(): unknown column type")
+        }
+    }
+    queryStr += ");"
+    
+    err := conn.Exec(queryStr)
+    if err != nil {
+        return fmt.Errorf("StoreTableToSqlite(): %s , %s,", queryStr, err.Error())
+    }
+    
+    for i := 0; i < len(tinfo.Data); i++ {
+        queryStr = fmt.Sprintf("insert into %s values (", name)
+        for j := 0; j < len(tinfo.Data[i]); j++ {
+            if j != 0 {
+                queryStr += ","
+            }
+            value := tinfo.Data[i][j]
+            if value == nil {
+                queryStr += "null"
+                continue
+            }
+            switch tinfo.ColumnTypes[j] {
+                case IntegerDatatype:
+                    queryStr += fmt.Sprintf("%d", value)
+                case StringDatatype:
+                    queryStr += fmt.Sprintf("'%s'", value)
+                case FloatDatatype:
+                    queryStr += fmt.Sprintf("%f", value)
+            }
+        }
+        queryStr += ");"
+        err = conn.Exec(queryStr)
+        if err != nil {
+            return fmt.Errorf("StoreTableToSqlite(): %s , %s,", queryStr, err.Error())
+        }
+    }
+    
+    return nil
 }
