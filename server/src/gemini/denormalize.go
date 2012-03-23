@@ -6,25 +6,25 @@ Data is organized in Star schema fashion with a fact table and dimension tables
 which index it. Meant for creating data driven user displays.
 
 * Each column in DB table results in a dimension table with its unique values.
-* Except if column name is in SourceColumnDefinition map and is asigned to an 
+* Except if column name is in SourceColumnProperties map and is asigned to an 
   another dimension table using PartOfDim.
-* The order of the dimension tables can be assigned in SourceColumnDefinition
+* The order of the dimension tables can be assigned in SourceColumnProperty
 * The fact table only contains dimension table row ids, tying the dimension 
   tables together.
+* Uses Sqlite to do table manipulation
 
 example definiton:
 
-sd := stardisplay.StarDisplay{
-    SourceTableName: "mytable",
+d := gemini.Datamart{
     SourceTable: myTableInfo
-    SourceColumnDefinitions: map[string]stardisplay.SourceColumnDefinition{
+    SourceColumnProperties: map[string]gemini.SourceColumnProperty{
         "distance": stardisplay.SourceColumnDefinition{
             PartOfDim: "stop_ids",
         },
-        "route_short_name" : stardisplay.SourceColumnDefinition{
+        "route_short_name" : gemini.SourceColumnProperty{
             SortExpr: "convert(route_short_name, signed)",
         },
-        "destination_distance" : stardisplay.SourceColumnDefinition{
+        "destination_distance" : gemini.SourceColumnProperty{
             SortDirection: "desc",
         },
     },
@@ -112,7 +112,8 @@ func (d *Datamart) SetupDimDefinitions() map[string]*DimensionDefinition {
 
 func (d *Datamart) CreateDimensionTables(dimDefs map[string]*DimensionDefinition,
                                          conn *sqlite.Conn) error {
-    queryStr := ""
+    var queryStr string
+    var err error
     for name, dim := range dimDefs {
         // "integer primary key" creates as auto incrementing column
         queryStr = fmt.Sprintf(
@@ -129,16 +130,12 @@ func (d *Datamart) CreateDimensionTables(dimDefs map[string]*DimensionDefinition
         }
         queryStr += "); "
 
-        err := conn.Exec(queryStr)
+        err = conn.Exec(queryStr)
         if err != nil {
-            return fmt.Errorf(
-                "CreateDimensionTables() error, sqlite error: %s\nquery:\n%s\n",
-                err.Error(),
-                queryStr,
-            )
+            goto Error
         }
 
-        queryStr := fmt.Sprintf(
+        queryStr = fmt.Sprintf(
             `insert into %s 
              select null, %s %s
              from (select %s, %s sort %s
@@ -160,154 +157,133 @@ func (d *Datamart) CreateDimensionTables(dimDefs map[string]*DimensionDefinition
 
         err = conn.Exec(queryStr)
         if err != nil {
-            return fmt.Errorf(
-                "CreateDimensionTables() error, sqlite error: %s\nquery:\n%s\n",
-                err.Error(),
-                queryStr,
-            )
+            goto Error
         }
-    }
+        
+        queryStr = fmt.Sprintf(
+            "create index %s_idx on %s (%s);",
+            dim.UniqueColumn,
+            name,
+            dim.UniqueColumn,
+        )
 
-/*
-        query := `
-            set @count = -1;
-            create temporary table %s as
-            select @count := @count + 1 %s, %s %s
-            from (select %s, %s sort %s
-                  from %s
-                  where %s is not null
-                  group by %s, sort %s) a 
-            order by sort %s;
-        `
-        query = fmt.Sprintf(query, s.Dim[i].TableName, s.Dim[i].IndexColumnName,
-                            s.Dim[i].UniqueColumn, s.Dim[i].ExtraColumns,
-                            s.Dim[i].UniqueColumn, s.Dim[i].SortExpr, 
-                            s.Dim[i].ExtraColumns, s.SourceTableName, 
-                            s.Dim[i].UniqueColumn, s.Dim[i].UniqueColumn,
-                            s.Dim[i].ExtraColumns, s.Dim[i].SortDirection);
-        queries += query
-    }
-    err := db.Query(queries)
-    if err != nil {
-        return err
-    }
-
-    FreeMoreResults(db)
-
-    s.DimData = make(table.TableSet)        
-    for i := 0; i < len(s.Dim); i++ {
-        query := "select %s, %s %s from %s order by %s;"
-        query = fmt.Sprintf(query, s.Dim[i].IndexColumnName,
-                            s.Dim[i].UniqueColumn, s.Dim[i].ExtraColumns,
-                            s.Dim[i].TableName, s.Dim[i].IndexColumnName)
-        err := db.Query(query)
+        err = conn.Exec(queryStr)
         if err != nil {
-            return err
-        }
-
-        result, err := db.StoreResult()
-        if err != nil {
-            return err
-        }
-                
-        s.DimData[s.Dim[i].TableName]= table.LoadTableData(result);
-
-        err = db.FreeResult();
-        if err != nil {
-            return err
+            goto Error
         }
     }
-*/
-   return nil
+
+    return nil
+
+    Error:
+        return fmt.Errorf(
+            "CreateDimensionTables() error, sqlite error: %s\nquery:\n%s\n",
+            err.Error(),
+            queryStr,
+        )    
 }
 
-/*
+func getRowCount(name string, conn *sqlite.Conn) (int, error) {
+
+    stmt, err := conn.Prepare(fmt.Sprintf("select count(1) from %s;", name))
+    if err != nil {
+        return -1, err
+    }
+    err = stmt.Exec()
+    if err != nil {
+        return -1, err
+    }
+    stmt.Next()    
+    var count int 
+    err = stmt.Scan(&count)
+    if err != nil {
+        return -1, err
+    }
+    return count, nil;
+}
+
 
 // Create fact table by joing source table to dimension tables
 // Three cases for source data column:
 // 1. Matches dimension column, fact row value is id in matching dimesnion table row
 // 2. Is null, and dimension table for column has > 0 rows, fact row value is -1
 // 3. Is null, and dimension table for column has 0 rows, fact row value is -1
-func (s *StarDisplay) CreateFactTable(db *mysql.Client) os.Error {
-    // make list of non-zero dim tables
-    nzDim := make([]*DimDefinition, 0, len(s.Dim))
-    for i := 0; i < len(s.Dim); i++ {
-        if len(s.DimData[s.Dim[i].TableName]) > 0 {            
-            nzDim = append(nzDim, &s.Dim[i])
-        }
-    }
+func (d *Datamart) CreateFactTable(dimDefs map[string]*DimensionDefinition,
+                                   conn *sqlite.Conn) error {
 
-    // add indexes to dim tables
-    for i := 0; i < len(nzDim); i++ {
-        query := fmt.Sprintf("alter table %s add index (%s);",
-                             nzDim[i].TableName, nzDim[i].UniqueColumn)
-        err := db.Query(query)
+    rowCountCache := make(map[string]int)
+
+    // make list of non-zero dim tables
+    nzDim := make(map[string]*DimensionDefinition)
+    for name, dim := range dimDefs {
+        count, err := getRowCount(name, conn)
         if err != nil {
             return err
-        }        
+        }
+        rowCountCache[name] = count
+        if count > 0 {
+            nzDim[name] = dim
+        }
     }
 
     // make fact table
-    query := "select"
-    for i := 0; i < len(s.Dim); i++ {
+    query := "create table fact as select"
+    i := 0
+    for name, dim := range dimDefs {        
         if i != 0 {
             query += ","
         }
-        if (len(s.DimData[s.Dim[i].TableName]) == 0) {
-            query += " -1 " + s.Dim[i].IndexColumnName
+        if (rowCountCache[name] == 0) {
+            query += " -1 " + dim.IndexColumn
         } else {
-            query += " if(" + s.SourceTableName + "." + s.Dim[i].UniqueColumn + 
-                     " is null, -1, " + s.Dim[i].IndexColumnName + ") " + 
-                     s.Dim[i].IndexColumnName         
+            query += " case when source." + dim.UniqueColumn + 
+                     " is null then -1 else " + dim.IndexColumn + " end " + 
+                     dim.IndexColumn
         }
+        i++
     }
-    query += "\nfrom " + s.SourceTableName
-    for i := 0; i < len(nzDim); i++ {
-        query += ", " + nzDim[i].TableName
+    
+    query += "\nfrom source"
+    for name, _ := range nzDim {
+        query += ", " + name
     }
     query += "\nwhere "
-    for i := 0; i < len(nzDim); i++ {
+    i = 0
+    for name, dim := range nzDim {
         if i != 0 {
             query += " and "
         }
         query += "(("        
-        query += s.SourceTableName + "." + nzDim[i].UniqueColumn + " = " +  
-                 nzDim[i].TableName + "." + nzDim[i].UniqueColumn
-        query += ") or (" + s.SourceTableName + "." + nzDim[i].UniqueColumn +
-                 " is null))"
+        query += "source." + dim.UniqueColumn + " = " +  
+                 name + "." + dim.UniqueColumn
+        query += ") or (source." + dim.UniqueColumn + " is null))"
+        i++
     }
 
     // if all dimension tables a empty return emtpy fact table
-    if len(nzDim) == 0 {
+    if i == 0 {
         query += "1 = 0"
     }
 
     query += ";"
 
-    err := db.Query(query)
+    err := conn.Exec(query)
     if err != nil {
-        return err
-    }
-
-    result, err := db.StoreResult()
-     if err != nil {
-        return err
-    }
-
-    s.FactData = table.LoadTableData(result);
-
-    err = db.FreeResult();
-    if err != nil {
-        return err
+        return fmt.Errorf(
+            "CreateFactTable() error, sqlite error: %s\nquery:\n%s\n",
+            err.Error(),
+            query,
+        )    
     }
 
     return nil   
 }
 
-*/
 
 func (d *Datamart) PerformQueries() (TableSet, error) {
-    conn, err := sqlite.Open("/tmp/blah.db")
+//    os.Remove("/tmp/blah.db")    
+//    conn, err := sqlite.Open("/tmp/blah.db")
+    conn, err := sqlite.Open(":memory:")
     if err != nil {
         return nil, err
     }
@@ -324,48 +300,43 @@ func (d *Datamart) PerformQueries() (TableSet, error) {
         return nil, err
     }
 
-    conn.Exec("commit;");
     if err != nil {
         return nil, err
     }
 
-/*
-
-    err := s.CreateDimensionTables(conn)
-    if err != nil {
-        return nil, err
-    }
-
-    err = s.CreateFactTable(db)
+    err = d.CreateFactTable(dimDefs, conn)
     if err != nil {
         return nil, err
     }
     
-    ret := make(table.TableSet)
-    for k, v := range s.DimData {
-        ret[k] = v
+    var tables []string
+    tables = append(tables, "fact")
+    for name, _ := range dimDefs {
+        tables = append(tables, name)
     }
-    ret[s.FactTableName] = s.FactData
-*/
-    
-    return nil, nil
-}
 
-/*
-
-func (s StarDisplay) String() string {
-    var str string
-    str += "Fact table: " + s.FactTableName + "\n"
-    str += s.FactData.String()
-    str += "Dim tables:\n"
-    str += s.DimData.String()
-    return str
-}
-
-
-func FreeMoreResults(db *mysql.Client) {
-    for ; db.MoreResults() ; {
-        db.NextResult()
+    ret := make(TableSet)        
+    for _, name := range tables{
+        query := fmt.Sprintf("select * from %s ;", name)
+        stmt, err := conn.Prepare(query)
+        if err != nil {
+            return nil, fmt.Errorf(
+                "PerformQueries() error, sqlite error: %s\nquery:\n%s\n",
+                err.Error(),
+                query,
+            )    
+        }
+        err = stmt.Exec()
+        if err != nil {
+            return nil, err
+        }
+        ret[name], err = LoadTableFromSqlite(stmt)
+        if err != nil {
+            return nil, err
+        }
     }
+
+    return ret, nil
 }
-*/
+
+

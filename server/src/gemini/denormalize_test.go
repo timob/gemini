@@ -25,11 +25,11 @@ func TestDatamart(t *testing.T) {
         SourceTableData: info,
     }
        
-    _, err = dmart.PerformQueries()
+    tables, err := dmart.PerformQueries()
     fatalOnError(err, t)
     
-    
-    
-//    t.Logf("%v\n", dmart)
+    for name, table := range tables {
+        t.Logf("name: %s\n%v\n", name, table)
+    }
 }
 
