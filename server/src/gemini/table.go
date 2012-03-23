@@ -145,29 +145,28 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
     return &info, nil
 }
 
+var mapDatatypeToSqlite map[ColumnDatatype]string = map[ColumnDatatype]string{
+    IntegerDatatype : "numeric",
+    StringDatatype : "text",
+    FloatDatatype : "real",
+}
+
 func StoreTableToSqlite(conn *sqlite.Conn , name string, tinfo *TableInfo) error {
     queryStr := fmt.Sprintf("create table %s (", name)
     for i := 0; i < len(tinfo.ColumnNames); i++ {
         if i != 0 {
             queryStr += ","
         }
-        queryStr += tinfo.ColumnNames[i]
-        switch tinfo.ColumnTypes[i] {
-            case IntegerDatatype:
-                queryStr += fmt.Sprintf(" numeric")
-            case StringDatatype:
-                queryStr += fmt.Sprintf(" text")
-            case FloatDatatype:
-                queryStr += fmt.Sprintf(" real")
-            default:
-                return errors.New("StoreTableToSqlite(): unknown column type")
-        }
+        queryStr += 
+            tinfo.ColumnNames[i] + 
+            " "  +
+            mapDatatypeToSqlite[tinfo.ColumnTypes[i]]
     }
     queryStr += ");"
     
     err := conn.Exec(queryStr)
     if err != nil {
-        return fmt.Errorf("StoreTableToSqlite(): %s , %s,", queryStr, err.Error())
+        return fmt.Errorf("StoreTableToSqlite(): %s , %s,", err.Error(), queryStr)
     }
     
     for i := 0; i < len(tinfo.Data); i++ {
@@ -193,7 +192,7 @@ func StoreTableToSqlite(conn *sqlite.Conn , name string, tinfo *TableInfo) error
         queryStr += ");"
         err = conn.Exec(queryStr)
         if err != nil {
-            return fmt.Errorf("StoreTableToSqlite(): %s , %s,", queryStr, err.Error())
+            return fmt.Errorf("StoreTableToSqlite(): %s , %s,", err.Error(), queryStr)
         }
     }
     
