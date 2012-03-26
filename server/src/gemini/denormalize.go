@@ -300,10 +300,6 @@ func (d *Datamart) PerformQueries() (TableSet, error) {
         return nil, err
     }
 
-    if err != nil {
-        return nil, err
-    }
-
     err = d.CreateFactTable(dimDefs, conn)
     if err != nil {
         return nil, err
