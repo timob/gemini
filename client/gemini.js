@@ -3,20 +3,48 @@
     dimension tables (array).
 
     Todo:
-    * Look at changing filter function arguments pass as an object
     * Look at aditional callback function to do group by functions ie (max/min)
     * Look at adding specified sort order 
     * Look at adding number of rows returned
-
-    done but needs work:
-    * Look at being able to alias column names (done but inefficent)
 */
 
+//
+// GeminiTable Class
+//
+function GeminiTable(tableInfo)
+{
+    this.data = tableInfo.Data;
+    this.columnNames = tableInfo.ColumnNames;
+    this.columnTypes = tableInfo.ColumnTypes;
+    this.columnAliases = new Object();
+}
+
+GeminiTable.prototype.getRowMap = function(rowNum) {
+    var retVal = new Object();
+    for (var i = 0; i < this.columnNames; i++) {
+        retVal[this.columnNames[i]] = this.data[rowNum][i];
+        for (var j = 0; j < this.columnAliases[this.columnNames[i]].length; j++) {
+            retVal[this.columnAliases[this.columnNames[i]][j]] = this.data[rowNum][i];
+        }
+    }
+    return retVal;
+};
+
+GeminiTable.prototype.addAdlias = function(columnName, alias) {
+    if (this.columnAliases[columnName] == undefined) {
+        this.columnAliases[columnName] = new Array();
+    }
+    this.columnAliases[columnName].push(alias);
+};
+
+
+//
+// GeminiDb Class
+//
 function GeminiDb(source)
 {
-    this.tables = source;
-    for (var table in tables) {
-        this[table] = tables[table];
+    for (var table in source) {
+        this[table] = new GeminiTable(source[table]);
     }
 
     if (this.fact == undefined) {
@@ -24,85 +52,108 @@ function GeminiDb(source)
     }
 }
 
+GeminiDb.prototype.factLookup = function(row)  {
+    var retVal = new Object();
+    var factRow = this.fact.getRowMap(row);
+    for (var factColName in factRow) {
+        var tableName = factColName.slice(0, -3) + s;
+        var dimRow = this[tableName].getRowMap(factRow[factColName]);
+        for (var dimColName in dimRow) {
+            retVal[dimColName] = dimRow[dimColName];
+        }
+    }
+    return retVal;
+};
+
+GeminiDb.prototype.idForTable = function(tableName) {
+    return tableName.slice(0, -1) + "_id";
+};
+
+GeminiDb.prototype.addAlias = function(tableName, columnName, alias) {
+    this[tableName].addAlias(columnName, alias);
+};
+
 GeimiDb.prototype.newQuery()  = function() {
     return new GeminiQuery(this);
 };
 
-function GeminiResult() = function() {
-    this.length = 0;    
+
+//
+// GeminiResult Class
+//
+function GeminiResult(object) {
+    this.length = 0;   
+    for (var prop in object) {
+        if (prop == "length" || prop == "add") {
+            throw new Error('GeminiResult:: invalid column name');
+        }
+        this[prop] = object[prop];
+    }    
 }
 
+GeminiResult.prototype.add = function(newRes) {
+    this[this.length] = newRes;
+    this.length++;
+};
+
+
+//
+// GeminiQuery Class
+//
 function GeminiQuery(geminiDb)
 {
-    this.geminiDb = geminiDb;
+    this.db = geminiDb;
     this.fromTables = new Array();
 }
 
 GeminiQuery.prototype.addFromTable() = function () {
     for (var i = 0; i < arguments.length; i++) {
+        if (this.db[arguments[i]] === undefined) {
+            throw new Error(
+                'GeminiQuery::addFromTable Cant find ' + 
+                arguments[i] + 
+                ' in tables db object.'
+            );
+        }
         this.fromTables.push(arguments[i]);
     }
     return this;
 };
 
-GeminiQuery.prototype.addFilterFunc() = function (filter {
+GeminiQuery.prototype.addFilterFunc() = function (filter) {
     this.filter = filter;
     return this;
 };
 
-GeminiQuery.prototype.slicendice = function()
-{
-    
-};
-
-StarSchema.prototype.slicendice = function(queryTablesSpec, filterFunction)
-{
-    var queryTables = queryTablesSpec.replace(/ /g, '').split(',');
-    var groupColumns = new Array();    
-    for (var i = 0; i < queryTables.length; i++) {
-        if (this.dimTableIdColumns[queryTables[i]] === undefined) {
-            throw new Error('StarSchema::slicendice Cant find ' + queryTables[i] + 
-                            ' in tables array.');
-        }
-        groupColumns[i] = this.dimTableIdColumns[queryTables[i]];
-    } 
-
-    var groups = new Object();
+GeminiQuery.prototype.slicendice = function() {
+    // select rows from fact table
     var selectedArray = new Array();
-    for (var i = 0; i < this.factTable.length; i++) {
-        if (filterFunction !== null) {
-            filterFunctionArguments = new Array();
-            for (var j = 0; j < groupColumns.length; j++) {
-                filterFunctionArguments.push(this.factTable[i][groupColumns[j]]);
-            }
-            if (filterFunction.apply(this, filterFunctionArguments)) {
+    var unique = new Object();
+    for (var i = 0; i < this.db.fact.length; i++) {
+        var row = this.db.factLookup(i);
+        if (this.filter != undefined) {
+            if (this.filter(row)) {
                 continue;
             }
         }
- 
-        // check if we have seen this permutation before if so dont add
-        // to avoid duplicates
-        for (var j = 1, exists = groups[this.factTable[i][groupColumns[0]]];
-             j < groupColumns.length, exists !== undefined; j++) 
-        {
-            var exists = exists[this.factTable[i][groupColumns[j]]];
+        
+        var key = new Array();
+        for (var j = 0; j < this.fromTables.length; j++) {
+            key.push(row[this.db.idForTable[this.fromTables[j]]);
         }
+        
+        if (unique[key.join('-')] == undefined) {
+            unique[key.join('-')] = 1;
+            selectedArray.push(key);
+        }
+    }
 
-        if (exists == undefined) {
-            var ids = new Array();
-            for (var j = 0; j < groupColumns.length; j++) {
-                ids.push(this.factTable[i][groupColumns[j]]);
-            }
-            selectedArray.push(ids);
-        }        
-    } /* i loop */
-    
-    function expand(flatIndex, parentRoot, depth) { 
+    function expand(flatIndex, parentRoot, depth) {
         var subGroups = new Object(); // map unique value at this level to subgroup
         var groupList = new Array(); // ordered list of unique values at this level
-        
+
         for (var i = 0; i < flatIndex.length; i++) {
-            var indexValue = flatIndex[i][queryTables.length - 1 - depth];
+            var indexValue = flatIndex[i][this.fromTables.length - 1 - depth];
             if (subGroups[indexValue] === undefined) { // if not seen value before add subgroup and value
                 subGroups[indexValue] = new Array(); 
                 groupList.push(indexValue);            
@@ -111,35 +162,25 @@ StarSchema.prototype.slicendice = function(queryTablesSpec, filterFunction)
                 subGroups[indexValue].push(flatIndex[i]);
             }
         }
-        
+
         var sorted = groupList.sort(function(a,b) {
             return a > b;
         });
         
         for (var i = 0; i < sorted.length; i++) {
-            var entry = new Object(); // object that is passed back to caller
-            entry.id = sorted[i];
-            entry.value = this.dimTables[queryTables[queryTables.length - 1 - depth]][sorted[i]];
-            entry.subGroup = new Array();
-            parentRoot.push(entry);
+            var row = this.db[this.fromTables[this.fromTables.length - 1 - depth]].getRowMap(sorted[i]);
+            var result = new GeminiResult(row); // object that is passed back to caller
+            parentRoot.add(result);
             if (subGroups[sorted[i]].length > 0) {
                 // process sub group for this value specifing this as the parent
                 // in recursive call
-                expand.call(this, subGroups[sorted[i]], entry.subGroup, depth - 1);
+                expand.call(this, subGroups[sorted[i]], result, depth - 1);
             }
         }
-    };
+    }
 
-    var results = new Array();
-    expand.call(this, selectedArray, results, queryTables.length -1);
+    var results = new GeminiResult();
+    expand.call(this, selectedArray, results, this.fromTables.length -1);
     
     return results;
 };
-
-StarSchema.prototype.add_alias = function(table, columnName, alias) {
-    for (var i = 0; i < this[table].length; i++) {
-        this[table][i][alias] = this[table][i][columnName];
-    }
-};
-
-

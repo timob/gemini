@@ -305,15 +305,18 @@ func (d *Datamart) PerformQueries() (TableSet, error) {
         return nil, err
     }
     
-    var tables []string
-    tables = append(tables, "fact")
-    for name, _ := range dimDefs {
-        tables = append(tables, name)
+    var selects []map[string]string
+    selects = append(selects, {"name": "fact", "order": "")
+    for name, dim := range dimDefs {
+        selects = append(
+            selects, 
+            {"name": name, "order": "order by " + dim.IndexColumn}
+        )
     }
 
     ret := make(TableSet)        
-    for _, name := range tables{
-        query := fmt.Sprintf("select * from %s ;", name)
+    for _, sel := range selects{
+        query := fmt.Sprintf("select * from %s %s;",sel.name, sel.order)
         stmt, err := conn.Prepare(query)
         if err != nil {
             return nil, fmt.Errorf(
