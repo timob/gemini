@@ -21,16 +21,18 @@ function GeminiTable(tableInfo)
 
 GeminiTable.prototype.getRowMap = function(rowNum) {
     var retVal = new Object();
-    for (var i = 0; i < this.columnNames; i++) {
+    for (var i = 0; i < this.columnNames.length; i++) {
         retVal[this.columnNames[i]] = this.data[rowNum][i];
-        for (var j = 0; j < this.columnAliases[this.columnNames[i]].length; j++) {
-            retVal[this.columnAliases[this.columnNames[i]][j]] = this.data[rowNum][i];
+        if (this.columnAliases[this.columnNames[i]] != undefined) {
+            for (var j = 0; j < this.columnAliases[this.columnNames[i]].length; j++) {
+                retVal[this.columnAliases[this.columnNames[i]][j]] = this.data[rowNum][i];
+            }
         }
     }
     return retVal;
 };
 
-GeminiTable.prototype.addAdlias = function(columnName, alias) {
+GeminiTable.prototype.addAlias = function(columnName, alias) {
     if (this.columnAliases[columnName] == undefined) {
         this.columnAliases[columnName] = new Array();
     }
@@ -55,8 +57,8 @@ function GeminiDb(source)
 GeminiDb.prototype.factLookup = function(row)  {
     var retVal = new Object();
     var factRow = this.fact.getRowMap(row);
-    for (var factColName in factRow) {
-        var tableName = factColName.slice(0, -3) + s;
+    for (var factColName in factRow) {        
+        var tableName = factColName.slice(0, -3) + 's';
         var dimRow = this[tableName].getRowMap(factRow[factColName]);
         for (var dimColName in dimRow) {
             retVal[dimColName] = dimRow[dimColName];
@@ -73,7 +75,7 @@ GeminiDb.prototype.addAlias = function(tableName, columnName, alias) {
     this[tableName].addAlias(columnName, alias);
 };
 
-GeimiDb.prototype.newQuery()  = function() {
+GeminiDb.prototype.newQuery  = function() {
     return new GeminiQuery(this);
 };
 
@@ -96,6 +98,33 @@ GeminiResult.prototype.add = function(newRes) {
     this.length++;
 };
 
+function printGeminiResult(result, depth) {
+    if (arguments.length == 1) {
+        depth = 0;
+    }
+
+    var line = '';
+    for (var prop in result) {
+        if (prop == "length" || 
+            prop == "add" || 
+            (prop + "").search(/^[0-9]+$/) != -1)
+        {
+            continue;
+        }
+        for (var i = 0; i < (depth-1)*4; i++) {
+            line += ' ';
+        }
+        line += prop + ': ' + result[prop] + ' ';
+    }
+    if (line != '') {
+        print(line);
+    }
+
+    depth++;
+    for (var i = 0; i < result.length; i++) {
+        printGeminiResult(result[i], depth);
+    }
+};
 
 //
 // GeminiQuery Class
@@ -106,7 +135,7 @@ function GeminiQuery(geminiDb)
     this.fromTables = new Array();
 }
 
-GeminiQuery.prototype.addFromTable() = function () {
+GeminiQuery.prototype.addFromTable = function () {
     for (var i = 0; i < arguments.length; i++) {
         if (this.db[arguments[i]] === undefined) {
             throw new Error(
@@ -120,7 +149,7 @@ GeminiQuery.prototype.addFromTable() = function () {
     return this;
 };
 
-GeminiQuery.prototype.addFilterFunc() = function (filter) {
+GeminiQuery.prototype.addFilterFunc = function (filter) {
     this.filter = filter;
     return this;
 };
@@ -129,7 +158,7 @@ GeminiQuery.prototype.slicendice = function() {
     // select rows from fact table
     var selectedArray = new Array();
     var unique = new Object();
-    for (var i = 0; i < this.db.fact.length; i++) {
+    for (var i = 0; i < this.db.fact.data.length; i++) {
         var row = this.db.factLookup(i);
         if (this.filter != undefined) {
             if (this.filter(row)) {
@@ -139,7 +168,7 @@ GeminiQuery.prototype.slicendice = function() {
         
         var key = new Array();
         for (var j = 0; j < this.fromTables.length; j++) {
-            key.push(row[this.db.idForTable[this.fromTables[j]]);
+            key.push(row[this.db.idForTable(this.fromTables[j])]);
         }
         
         if (unique[key.join('-')] == undefined) {
@@ -147,7 +176,8 @@ GeminiQuery.prototype.slicendice = function() {
             selectedArray.push(key);
         }
     }
-
+    
+    // group and sort results into tree structure
     function expand(flatIndex, parentRoot, depth) {
         var subGroups = new Object(); // map unique value at this level to subgroup
         var groupList = new Array(); // ordered list of unique values at this level
@@ -179,7 +209,7 @@ GeminiQuery.prototype.slicendice = function() {
         }
     }
 
-    var results = new GeminiResult();
+    var results = new GeminiResult(new Object());
     expand.call(this, selectedArray, results, this.fromTables.length -1);
     
     return results;
