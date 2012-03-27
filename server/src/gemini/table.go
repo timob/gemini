@@ -41,6 +41,7 @@ func LoadTableFromMySQL(result *mysql.Result) (*TableInfo, error) {
              	 mysql.FIELD_TYPE_TINY,
              	 mysql.FIELD_TYPE_SHORT,
 	             mysql.FIELD_TYPE_LONG,
+	             mysql.FIELD_TYPE_NEWDECIMAL,
 	             mysql.FIELD_TYPE_LONGLONG:
 	            info.ColumnTypes[i] = IntegerDatatype
             case mysql.FIELD_TYPE_FLOAT,
