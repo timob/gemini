@@ -35,6 +35,7 @@ package gemini
 import (
     "fmt"
     "sqlite"
+    "strings"
 )
 
 const (
@@ -236,8 +237,9 @@ func (d *Datamart) CreateFactTable(dimDefs map[string]*DimensionDefinition,
         if (rowCountCache[name] == 0) {
             query += " -1 " + dim.IndexColumn
         } else {
+            // dim.IndexColumn value - 1 because want ids to start at 0
             query += " case when source." + dim.UniqueColumn + 
-                     " is null then -1 else " + dim.IndexColumn + " end " + 
+                     " is null then -1 else " + dim.IndexColumn + " - 1 end " + 
                      dim.IndexColumn
         }
         i++
@@ -304,19 +306,41 @@ func (d *Datamart) PerformQueries() (TableSet, error) {
     if err != nil {
         return nil, err
     }
-    
-    var selects []map[string]string
-    selects = append(selects, map[string]string{"name": "fact", "order": ""})
-    for name, dim := range dimDefs {
-        selects = append(
-            selects, 
-            map[string]string{"name": name, "order": "order by " + dim.IndexColumn},
-        )
-    }
 
     ret := make(TableSet)        
-    for _, sel := range selects{
-        query := fmt.Sprintf("select * from %s %s;",sel["name"], sel["order"])
+
+    // factable 
+    query := "select * from fact;"
+    stmt, err := conn.Prepare(query)
+    if err != nil {
+        return nil, err
+    }    
+    err = stmt.Exec()
+    if err != nil {
+        return nil, err
+    }    
+    ret["fact"], err = LoadTableFromSqlite(stmt)
+    if err != nil {
+        return nil, err
+    }
+
+    // dimtables
+    // should be just "select * from dimtable orderby indexcolumn" but
+    // these selects are more complicated because need ids to start a 0
+    // and sqlite auto increment starts at 1
+    // annoying
+    for name, dim := range dimDefs {
+        query := fmt.Sprintf(
+            "select %s - 1 %s, %s",
+            dim.IndexColumn,
+            dim.IndexColumn,
+            dim.UniqueColumn,
+        )
+        if len(dim.ExtraColumns) > 0 {
+            query += "," + strings.Join(dim.ExtraColumns, ",")
+        }
+        query += fmt.Sprintf(" from %s order by %s;", name, dim.IndexColumn)
+
         stmt, err := conn.Prepare(query)
         if err != nil {
             return nil, fmt.Errorf(
@@ -329,7 +353,7 @@ func (d *Datamart) PerformQueries() (TableSet, error) {
         if err != nil {
             return nil, err
         }
-        ret[sel["name"]], err = LoadTableFromSqlite(stmt)
+        ret[name], err = LoadTableFromSqlite(stmt)
         if err != nil {
             return nil, err
         }
