@@ -306,17 +306,17 @@ func (d *Datamart) PerformQueries() (TableSet, error) {
     }
     
     var selects []map[string]string
-    selects = append(selects, {"name": "fact", "order": "")
+    selects = append(selects, map[string]string{"name": "fact", "order": ""})
     for name, dim := range dimDefs {
         selects = append(
             selects, 
-            {"name": name, "order": "order by " + dim.IndexColumn}
+            map[string]string{"name": name, "order": "order by " + dim.IndexColumn},
         )
     }
 
     ret := make(TableSet)        
     for _, sel := range selects{
-        query := fmt.Sprintf("select * from %s %s;",sel.name, sel.order)
+        query := fmt.Sprintf("select * from %s %s;",sel["name"], sel["order"])
         stmt, err := conn.Prepare(query)
         if err != nil {
             return nil, fmt.Errorf(
@@ -329,7 +329,7 @@ func (d *Datamart) PerformQueries() (TableSet, error) {
         if err != nil {
             return nil, err
         }
-        ret[name], err = LoadTableFromSqlite(stmt)
+        ret[sel["name"]], err = LoadTableFromSqlite(stmt)
         if err != nil {
             return nil, err
         }
