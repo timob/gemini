@@ -75,7 +75,8 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
     var cols, colptrs []interface{}
     
     data := make(TableData, 0, 5000)
-    for i := 0;; i++ {
+    var i int
+    for i = 0;; i++ {
         if s.Next() == false {
             break
         }
@@ -139,6 +140,12 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
 
         // add columns values as row to table
         data = append(data, cols)
+    }
+    
+    // if no rows just create empty arrays for column names, types
+    if i == 0 {
+            info.ColumnNames = make([]string, 0)
+            info.ColumnTypes = make([]ColumnDatatype, 0)
     }
     
     info.Data = data
