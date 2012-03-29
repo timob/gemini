@@ -9,6 +9,12 @@ function printobject(o) {
     print(line);
 }
 
+function printobjectarray(a) {
+    for (var i = 0; i < a.length; i++) {
+        printobject(a[i]);
+    }
+}
+
 function testGeminiresult() {
     var x = new GeminiResult(new Object());
     var y = new GeminiResult({"hello": "world"});
@@ -54,6 +60,14 @@ function testGeminiQuery() {
     });
     var z = y.slicendice();
     printGeminiResult(z);
+
+    var a = x.newQuery();
+    a.addFromTable('route_short_names', 'route_long_names', "date_times");
+    a.addFilterFunc(function (row) {
+        return (row.route_short_name == 44);
+    });
+    var b = a.simplesort();
+    printobjectarray(b);    
 }
 
 testGeminiQuery();

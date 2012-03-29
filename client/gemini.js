@@ -54,9 +54,8 @@ function GeminiDb(source)
     }
 }
 
-GeminiDb.prototype.factLookup = function(row)  {
+GeminiDb.prototype.joinFactToDim = function(factRow)  {
     var retVal = new Object();
-    var factRow = this.fact.getRowMap(row);
     for (var factColName in factRow) {        
         var tableName = factColName.slice(0, -3) + 's';
         var dimRow = this[tableName].getRowMap(factRow[factColName]);
@@ -65,6 +64,11 @@ GeminiDb.prototype.factLookup = function(row)  {
         }
     }
     return retVal;
+}
+
+GeminiDb.prototype.factLookup = function(rowNum)  {
+    var factRow = this.fact.getRowMap(rowNum);
+    return this.joinFactToDim(factRow);
 };
 
 GeminiDb.prototype.idForTable = function(tableName) {
@@ -154,7 +158,7 @@ GeminiQuery.prototype.addFilterFunc = function (filter) {
     return this;
 };
 
-GeminiQuery.prototype.slicendice = function() {
+GeminiQuery.prototype.selectRows = function() {
     // select rows from fact table
     var selectedArray = new Array();
     var unique = new Object();
@@ -176,6 +180,12 @@ GeminiQuery.prototype.slicendice = function() {
             selectedArray.push(key);
         }
     }
+
+    return selectedArray;    
+};
+
+GeminiQuery.prototype.slicendice = function() {
+    var selectedArray = this.selectRows();
     
     // group and sort results into tree structure
     function expand(flatIndex, parentRoot, depth) {
@@ -214,3 +224,30 @@ GeminiQuery.prototype.slicendice = function() {
     
     return results;
 };
+
+GeminiQuery.prototype.simplesort = function() {
+    var selectedArray = this.selectRows();
+    
+    var sorted = selectedArray.sort(function(a, b) {
+        for (var i = 0; i < a.length; i++) {
+            if (a[i] > b[i]) {
+                return true;
+            } else if (a[i] < b[i]) {
+                return false;
+            } else {
+                continue;
+            }
+        }
+    });
+
+    var results = new Array();
+    for (var i = 0; i < sorted.length; i++) {
+        var factRow = new Object();
+        for (var j = 0; j < this.fromTables.length; j++) {
+            factRow[this.db.idForTable(this.fromTables[j])] = sorted[i][j];           
+        }
+        results.push(this.db.joinFactToDim(factRow));
+    }
+    return results;
+}
+
