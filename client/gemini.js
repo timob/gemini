@@ -157,8 +157,8 @@ GeminiQuery.prototype.addFromTable = function () {
     return this;
 };
 
-GeminiQuery.prototype.addFilterFunc = function (filter) {
-    this.filter = filter;
+GeminiQuery.prototype.addClause = function (clauseFunc) {
+    this.clauseFunc = clauseFunc;
     return this;
 };
 
@@ -168,8 +168,8 @@ GeminiQuery.prototype.selectRows = function() {
     var unique = new Object();
     for (var i = 0; i < this.db.fact.data.length; i++) {
         var row = this.db.factLookup(i);
-        if (this.filter != undefined) {
-            if (this.filter(row)) {
+        if (this.clauseFunc != undefined) {
+            if (this.clauseFunc(row) == false) {
                 continue;
             }
         }

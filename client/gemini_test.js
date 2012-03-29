@@ -55,16 +55,16 @@ function testGeminiQuery() {
     var x = new GeminiDb(JSON.parse(jsonNextArrivals));
     var y = x.newQuery();
     y.addFromTable('route_short_names', 'route_long_names', "date_times");
-    y.addFilterFunc(function (row) {
-        return (row.route_short_name == 3);
+    y.addClause(function (row) {
+        return (row.route_short_name != 3);
     });
     var z = y.slicendice();
     printGeminiResult(z);
 
     var a = x.newQuery();
     a.addFromTable('route_short_names', 'route_long_names', "date_times");
-    a.addFilterFunc(function (row) {
-        return (row.route_short_name == 44);
+    a.addClause(function (row) {
+        return (row.route_short_name != 44);
     });
     var b = a.simplesort();
     printobjectarray(b);    
