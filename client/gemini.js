@@ -58,9 +58,13 @@ GeminiDb.prototype.joinFactToDim = function(factRow)  {
     var retVal = new Object();
     for (var factColName in factRow) {        
         var tableName = factColName.slice(0, -3) + 's';
-        var dimRow = this[tableName].getRowMap(factRow[factColName]);
-        for (var dimColName in dimRow) {
-            retVal[dimColName] = dimRow[dimColName];
+        if (factRow[factColName] == -1) {
+            retVal[factColName] = -1;
+        } else {
+            var dimRow = this[tableName].getRowMap(factRow[factColName]);
+            for (var dimColName in dimRow) {
+                retVal[dimColName] = dimRow[dimColName];
+            }
         }
     }
     return retVal;
@@ -208,7 +212,14 @@ GeminiQuery.prototype.slicendice = function() {
         });
         
         for (var i = 0; i < sorted.length; i++) {
-            var row = this.db[this.fromTables[this.fromTables.length - 1 - depth]].getRowMap(sorted[i]);
+            var tableName = this.fromTables[this.fromTables.length - 1 - depth];
+            var row;
+            if (sorted[i] == -1) {
+                row = new Object();
+                row[this.db.idForTable(tableName)] = -1;
+            } else {
+                row = this.db[tableName].getRowMap(sorted[i]);
+            }
             var result = new GeminiResult(row); // object that is passed back to caller
             parentRoot.add(result);
             if (subGroups[sorted[i]].length > 0) {

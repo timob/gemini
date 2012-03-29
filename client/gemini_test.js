@@ -72,3 +72,28 @@ function testGeminiQuery() {
 
 testGeminiQuery();
 
+function testnull() {
+    var x = new GeminiDb({
+        "fact" : {
+            ColumnNames: ["name_id", "age_id"],
+            Data: [[0, 0], [1, -1]]
+        },
+        "names" : {
+            ColumnNames: ["name_id", "name"],
+            Data: [[0, "tim"], [1, "scarlet"]]
+        },
+        "ages" : {
+            ColumnNames: ["age_id", "age"],
+            Data: [[0, 35]] 
+        }
+    });
+    var y = x.factLookup(1);
+    printobject(y);
+    var z = x.newQuery().addFromTable('names', 'ages');
+    printobjectarray(z.simplesort());
+    printGeminiResult(z.slicendice());
+    var a = x.newQuery().addFromTable( 'ages', 'names');
+    printGeminiResult(a.slicendice());
+}
+
+testnull();
