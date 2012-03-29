@@ -5,6 +5,7 @@ import (
     "fmt"
     "sqlite"
     "errors"
+    "regexp"
 )
 
 type TableData [][]interface{}
@@ -192,7 +193,12 @@ func StoreTableToSqlite(conn *sqlite.Conn , name string, tinfo *TableInfo) error
                 case IntegerDatatype:
                     queryStr += fmt.Sprintf("%d", value)
                 case StringDatatype:
-                    queryStr += fmt.Sprintf("'%s'", value)
+                    re, err := regexp.Compile("'")
+                    if err != nil {
+                        return err
+                    }
+                    escaped := re.ReplaceAllString(value.(string), "''")
+                    queryStr += fmt.Sprintf("'%s'", escaped)
                 case FloatDatatype:
                     queryStr += fmt.Sprintf("%f", value)
             }
