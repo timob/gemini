@@ -242,9 +242,9 @@ GeminiQuery.prototype.simplesort = function() {
     var sorted = selectedArray.sort(function(a, b) {
         for (var i = 0; i < a.length; i++) {
             if (a[i] > b[i]) {
-                return true;
+                return 1;
             } else if (a[i] < b[i]) {
-                return false;
+                return -1;
             } else {
                 continue;
             }
