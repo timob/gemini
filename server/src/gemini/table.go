@@ -36,13 +36,13 @@ func LoadTableFromMySQL(result *mysql.Result) (*TableInfo, error) {
         info.ColumnNames[i] = fields[i].Name
         switch fields[i].Type {
             case mysql.FIELD_TYPE_VAR_STRING,
+	             mysql.FIELD_TYPE_DECIMAL,
+	             mysql.FIELD_TYPE_NEWDECIMAL,
                  mysql.FIELD_TYPE_VARCHAR:
                 info.ColumnTypes[i] = StringDatatype
-            case mysql.FIELD_TYPE_DECIMAL,
-             	 mysql.FIELD_TYPE_TINY,
+            case mysql.FIELD_TYPE_TINY,
              	 mysql.FIELD_TYPE_SHORT,
 	             mysql.FIELD_TYPE_LONG,
-	             mysql.FIELD_TYPE_NEWDECIMAL,
 	             mysql.FIELD_TYPE_LONGLONG:
 	            info.ColumnTypes[i] = IntegerDatatype
             case mysql.FIELD_TYPE_FLOAT,
