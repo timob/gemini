@@ -208,7 +208,7 @@ GeminiQuery.prototype.slicendice = function() {
         }
 
         var sorted = groupList.sort(function(a,b) {
-            return a > b;
+            return a - b;
         });
         
         for (var i = 0; i < sorted.length; i++) {
