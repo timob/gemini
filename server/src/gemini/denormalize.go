@@ -246,22 +246,15 @@ func (d *Datamart) CreateFactTable(dimDefs map[string]*DimensionDefinition,
     }
     
     query += "\nfrom source"
-    for name, _ := range nzDim {
-        query += ", " + name
-    }
-    query += "\nwhere "
-    i = 0
     for name, dim := range nzDim {
-        if i != 0 {
-            query += " and "
-        }
+        query += " left outer join " + name + " on "
         query += "source." + dim.UniqueColumn + " = " +  
                  name + "." + dim.UniqueColumn
-        i++
     }
 
     // if all dimension tables a empty return emtpy fact table
     if i == 0 {
+        query += "\nwhere "
         query += "1 = 0"
     }
 
