@@ -255,10 +255,8 @@ func (d *Datamart) CreateFactTable(dimDefs map[string]*DimensionDefinition,
         if i != 0 {
             query += " and "
         }
-        query += "(("        
         query += "source." + dim.UniqueColumn + " = " +  
                  name + "." + dim.UniqueColumn
-        query += ") or (source." + dim.UniqueColumn + " is null))"
         i++
     }
 
