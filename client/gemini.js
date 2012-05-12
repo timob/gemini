@@ -43,7 +43,7 @@ GeminiTable.prototype.addAlias = function(columnName, alias) {
 //
 // GeminiDb Class
 //
-function GeminiDb(source)
+function GeminiDb(source, dataHash)
 {
     for (var table in source) {
         this[table] = new GeminiTable(source[table]);
@@ -51,6 +51,10 @@ function GeminiDb(source)
 
     if (this.fact == undefined) {
         throw new Error("Gemini::constructor can't find fact table");
+    }
+    
+    if (dataHash != undefined) {
+        this.dataHash = dataHash;
     }
 }
 
@@ -188,7 +192,31 @@ GeminiQuery.prototype.selectRows = function() {
     return selectedArray;    
 };
 
+GeminiQuery.prototype.calcCacheHash = function() {
+    if (this.db.dataHash != undefined) {
+        if (this.clauseFunc != undefined) {
+            queryHash = hexMD5(
+                this.fromTables.join('') + this.clauseFunc.toString()
+            );
+        } else {
+            queryHash = hexMD5(this.fromTables.join(''));
+        }
+        return queryHash + this.db.dataHash;
+    } else {
+        return null;
+    }
+}
+
 GeminiQuery.prototype.slicendice = function() {
+    var cacheHash = this.calcCacheHash();
+    if (cacheHash != null) {
+        var cacheHit = sessionStorage.getItem(cacheHash);
+        if (cacheHit != null) {
+            console.log('gemini cache hit');
+            return JSON.parse(cacheHit);
+        }
+    }
+
     var selectedArray = this.selectRows();
     
     // group and sort results into tree structure
@@ -232,6 +260,12 @@ GeminiQuery.prototype.slicendice = function() {
 
     var results = new GeminiResult(new Object());
     expand.call(this, selectedArray, results, this.fromTables.length -1);
+
+    if (cacheHash != null) {
+        var item = JSON.stringify(results);
+        console.log(item.length)
+        sessionStorage.setItem(cacheHash, item);
+    } 
     
     return results;
 };
