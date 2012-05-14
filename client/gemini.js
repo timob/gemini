@@ -263,8 +263,10 @@ GeminiQuery.prototype.slicendice = function() {
 
     if (cacheHash != null) {
         var item = JSON.stringify(results);
-        console.log(item.length)
-        sessionStorage.setItem(cacheHash, item);
+        if (item.length < 1024*1024) {
+            console.log('Gemini caching result')
+            sessionStorage.setItem(cacheHash, item);
+        }
     } 
     
     return results;
