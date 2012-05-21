@@ -200,6 +200,7 @@ func getRowCount(name string, conn *sqlite.Conn) (int, error) {
     if err != nil {
         return -1, err
     }
+    stmt.Finalize()
     return count, nil;
 }
 
@@ -350,6 +351,11 @@ func (d *Datamart) PerformQueries() (TableSet, error) {
         }
     }
 
+    err = conn.Close()
+    if err != nil {
+        return nil, err
+    }
+                  
     return ret, nil
 }
 

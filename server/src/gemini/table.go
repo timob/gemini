@@ -152,6 +152,7 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
     }
     
     info.Data = data
+    s.Finalize()
     return &info, nil
 }
 
