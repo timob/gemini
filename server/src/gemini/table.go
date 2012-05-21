@@ -59,13 +59,13 @@ func LoadTableFromMySQL(result *mysql.Result) (*TableInfo, error) {
         }        
     }
     
-    data := make(TableData, result.RowCount())
+    data := make(TableData, 0, 300000)
     for i := 0;;i++ {
         row := result.FetchRow()
         if row == nil {
             break
         }
-        data[i] = row
+        data = append(data, row)
     }
     
     info.Data = data
@@ -77,7 +77,7 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
     var info TableInfo
     var cols, colptrs []interface{}
     
-    data := make(TableData, 0, 5000)
+    data := make(TableData, 0, 300000)
     var i int
     for i = 0;; i++ {
         if s.Next() == false {
