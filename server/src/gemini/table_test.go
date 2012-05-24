@@ -4,7 +4,10 @@ import (
     "mysql"
     "sqlite"
     "testing"
+    "bytes"
+    "io/ioutil"
 )
+
 
 func fatalOnError(err error, t* testing.T) {
     if err != nil {
@@ -15,8 +18,8 @@ func fatalOnError(err error, t* testing.T) {
 func TestLoadTableFromMySQL(t *testing.T) {
     db, err := mysql.DialTCP("localhost", "tim", "letmein", "tim")
     fatalOnError(err, t)
-        
-    err = db.Query("select name, age, length(name) namelen from tabletest;")
+    
+    err = db.Query("select name, age, length(name) namelen from tabletest;") 
     fatalOnError(err, t)
 
     result, err := db.StoreResult()    
@@ -25,10 +28,11 @@ func TestLoadTableFromMySQL(t *testing.T) {
     info, err := LoadTableFromMySQL(result)
     fatalOnError(err, t)
 
-    tables := make(TableSet)
-    tables["people"] = info
-    
-    t.Logf("here %v", *tables["people"])
+    var buf bytes.Buffer
+    err = info.JSONWrite(&buf)
+    fatalOnError(err, t)
+    js, err := ioutil.ReadAll(&buf)    
+    t.Log(string(js))        
 }
 
 func TestLoadTableFromSqlite(t *testing.T) {
@@ -40,39 +44,36 @@ func TestLoadTableFromSqlite(t *testing.T) {
     
     err = conn.Exec("insert into x values (1);")
     fatalOnError(err, t)
-    
+
     stmt, err := conn.Prepare("select x, 'hi' jacksons from x;")
     fatalOnError(err, t)
 
     info, err := LoadTableFromSqlite(stmt)
     fatalOnError(err, t)
-    
-    err = stmt.Finalize()
-    fatalOnError(err, t)
 
-    err = conn.Close()
+    var buf bytes.Buffer
+    err = info.JSONWrite(&buf)
     fatalOnError(err, t)
-    
-    tables := make(TableSet)
-    tables["stuff"] = info
-    
-    t.Logf("%v\n", *tables["stuff"])
+    js, err := ioutil.ReadAll(&buf)    
+    t.Log(string(js))        
 }
 
 func TestStoreTableToSqlite(t *testing.T) {
     conn, err := sqlite.Open(":memory:")
     fatalOnError(err, t)
     
-    tableInfo := &TableInfo{
+    tableInfo := &Table{
         ColumnNames : []string{"name", "age", "height"},
         ColumnTypes : []ColumnDatatype{
             StringDatatype,
             IntegerDatatype,
             FloatDatatype,
         },
-        Data : [][]interface{}{{"tim", nil, 1.8}, {"anna", 30, 1.5}},
     }
 
+    tableInfo.initData()
+    tableInfo.writeRow([]interface{}{"tim", 5, 1.1})
+    tableInfo.writeRow([]interface{}{"lao", 4, 1.5})
     err = StoreTableToSqlite(conn, "people", tableInfo)
     fatalOnError(err, t)
 

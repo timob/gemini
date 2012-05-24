@@ -6,9 +6,20 @@ import (
     "sqlite"
     "errors"
     "regexp"
+    "encoding/binary"
+    "encoding/json"
+    "io"
 )
 
-type TableData [][]interface{}
+var tableSpace [50*1024*1024]byte
+var allocedSpace int = 0
+
+type TableData []byte
+
+type cursor struct {
+    data *TableData
+    offset int
+}
 
 type ColumnDatatype string
 
@@ -18,16 +29,113 @@ const (
     FloatDatatype    = ColumnDatatype("float")
 )
 
-type TableInfo struct {
+
+type Table struct {
     ColumnNames     []string
     ColumnTypes     []ColumnDatatype
     Data            TableData
+    RowOffsets      []int    
 }
 
-type TableSet map[string]*TableInfo
+type TableSet map[string]*Table
 
-func LoadTableFromMySQL(result *mysql.Result) (*TableInfo, error) {
-    var info TableInfo
+
+func ClearTableSpace() {
+    allocedSpace = 0
+}
+
+func (t *TableData) Write(p []byte) (int, error) {
+    if len(p) + allocedSpace > len(tableSpace) {
+        return 0, errors.New("gemini table ran out of table space")
+    }
+    n := copy(tableSpace[allocedSpace:], p)
+    allocedSpace = allocedSpace + n
+    *t = tableSpace[allocedSpace - n - len(*t):allocedSpace]
+    return n, nil
+}
+
+func (c cursor) Read(p []byte) (int, error) {
+    return copy(p, (*c.data)[c.offset:]), nil
+}
+
+func (t *Table) initData() {
+    t.Data = tableSpace[allocedSpace:allocedSpace]
+    t.RowOffsets = make([]int, 0)
+}
+
+func (t *Table) rowCount() int {
+    return len(t.RowOffsets)
+}
+
+func (t *Table) writeRow(rowValues []interface{}) error {
+    t.RowOffsets = append(t.RowOffsets, len(t.Data))
+
+	for i, v := range t.ColumnTypes {
+        if rowValues[i] == nil {
+            err := binary.Write(&t.Data, binary.LittleEndian, int16(-1))
+            if err != nil {
+                return err
+            }
+            continue
+        }
+         
+        var rep string
+		switch v {
+		case IntegerDatatype:		    
+            rep = fmt.Sprintf("%d", rowValues[i])
+		case FloatDatatype:		    
+            rep = fmt.Sprintf("%f", rowValues[i])
+		case StringDatatype:
+            rep = rowValues[i].(string)
+	    }	    
+	    err := binary.Write(&t.Data, binary.LittleEndian, int16(len(rep)))       
+        if err != nil {
+            return err
+        }
+	    (&t.Data).Write([]byte(rep))
+	}
+	return nil
+}
+
+func (t *Table) readRow(rowNum int, rowValues []*interface{}) error {
+    offset := t.RowOffsets[rowNum]
+	for i, v := range t.ColumnTypes {
+	    var size int16
+	    var rep string
+	    binary.Read(cursor{&t.Data, offset}, binary.LittleEndian, &size)
+	    offset = offset + 2
+	    if size == -1 {
+            *(rowValues[i]) = nil
+            continue
+	    } else {
+	        rep = string(t.Data[offset:offset+int(size)])
+	        offset = offset + int(size)
+	    } 
+		switch v {
+		case IntegerDatatype:
+		    var value int64
+		    _, err := fmt.Sscan(rep, &value)
+            if err != nil {
+                return err
+            }
+		    *(rowValues[i]) = value
+		case FloatDatatype:
+		    var value float64
+		    _, err := fmt.Sscan(rep, &value)
+            if err != nil {
+                return err
+            }
+		    *(rowValues[i]) = value
+		case StringDatatype:
+		    *(rowValues[i]) = rep
+	    }
+	}
+	return nil
+}
+
+
+func LoadTableFromMySQL(result *mysql.Result) (*Table, error) {
+    var info Table
     
     fields := result.FetchFields()
     info.ColumnNames = make([]string, len(fields))
@@ -59,25 +167,28 @@ func LoadTableFromMySQL(result *mysql.Result) (*TableInfo, error) {
         }        
     }
     
-    data := make(TableData, 0, 300000)
+    info.initData()
+    
     for i := 0;;i++ {
         row := result.FetchRow()
         if row == nil {
             break
         }
-        data = append(data, row)
+        err := info.writeRow(row)
+        if err != nil {
+            return nil, err
+        }
     }
     
-    info.Data = data
     return &info, nil
 }
 
 
-func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
-    var info TableInfo
+func LoadTableFromSqlite(s *sqlite.Stmt) (*Table, error) {
+    var info Table
     var cols, colptrs []interface{}
     
-    data := make(TableData, 0, 300000)
+    info.initData()
     var i int
     for i = 0;; i++ {
         if s.Next() == false {
@@ -113,6 +224,8 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
                         )
                 }
             }
+            
+            cols = make([]interface{}, s.ColumnCount())
         }
 
         // assign column values to addresses pointed to by array elements
@@ -122,7 +235,6 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
         }
         
         // create new array and copy column values into elements of new array
-        cols = make([]interface{}, s.ColumnCount())
         for j := 0; j < s.ColumnCount(); j++ {
             switch s.ColumnType(j) {
                 case sqlite.IntegerDatatype:
@@ -142,7 +254,10 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
         }
 
         // add columns values as row to table
-        data = append(data, cols)
+        err = info.writeRow(cols)
+        if err != nil {
+            return nil, err
+        }
     }
     
     // if no rows just create empty arrays for column names, types
@@ -151,7 +266,6 @@ func LoadTableFromSqlite(s *sqlite.Stmt) (*TableInfo, error) {
             info.ColumnTypes = make([]ColumnDatatype, 0)
     }
     
-    info.Data = data
     s.Finalize()
     return &info, nil
 }
@@ -162,7 +276,7 @@ var mapDatatypeToSqlite map[ColumnDatatype]string = map[ColumnDatatype]string{
     FloatDatatype : "real",
 }
 
-func StoreTableToSqlite(conn *sqlite.Conn , name string, tinfo *TableInfo) error {
+func StoreTableToSqlite(conn *sqlite.Conn , name string, tinfo *Table) error {
     queryStr := fmt.Sprintf("create table %s (", name)
     for i := 0; i < len(tinfo.ColumnNames); i++ {
         if i != 0 {
@@ -180,13 +294,21 @@ func StoreTableToSqlite(conn *sqlite.Conn , name string, tinfo *TableInfo) error
         return fmt.Errorf("StoreTableToSqlite(): %s , %s,", err.Error(), queryStr)
     }
     
-    for i := 0; i < len(tinfo.Data); i++ {
+    row := make([]*interface{}, len(tinfo.ColumnTypes))
+    for i := 0; i < len(row); i++ {
+        row[i] = new(interface{})
+    }
+    for i := 0; i < tinfo.rowCount(); i++ {
         queryStr = fmt.Sprintf("insert into %s values (", name)
-        for j := 0; j < len(tinfo.Data[i]); j++ {
+        err := tinfo.readRow(i, row)
+        if err != nil {
+            return err
+        }
+        for j := 0; j < len(row); j++ {
             if j != 0 {
                 queryStr += ","
             }
-            value := tinfo.Data[i][j]
+            value := *(row[j])
             if value == nil {
                 queryStr += "null"
                 continue
@@ -214,3 +336,57 @@ func StoreTableToSqlite(conn *sqlite.Conn , name string, tinfo *TableInfo) error
     
     return nil
 }
+
+func (t *Table) JSONWrite(w io.Writer) error {
+    w.Write([]byte("{\"ColumnNames\":"))
+    js,err := json.Marshal(t.ColumnNames)
+    if err != nil {
+        return err
+    }
+    w.Write(js)
+    w.Write([]byte(", \"ColumnTypes\":"))
+    js,err = json.Marshal(t.ColumnTypes)
+    if err != nil {
+        return err
+    }                    
+    w.Write(js)
+    w.Write([]byte(", \"Data\":["))
+    row := make([]*interface{}, len(t.ColumnTypes))
+    for i := 0; i < len(row); i++ {
+        row[i] = new(interface{})
+    }                        
+    for i := 0; i < t.rowCount(); i++ {
+        if i != 0 {
+            w.Write([]byte(","))
+        }
+        t.readRow(i, row)
+        js,err = json.Marshal(row)
+        if err != nil {
+            return err
+        }        
+        w.Write(js) 
+    }
+    w.Write([]byte("]}"))
+    return nil
+}
+        
+func (t TableSet) JSONWrite(w io.Writer) error {
+    w.Write([]byte("{"))
+    i := 0
+    for k, v := range t {
+        if i != 0 {
+            w.Write([]byte(","))
+        }
+        w.Write([]byte("\""))
+        w.Write([]byte(k))
+        w.Write([]byte("\":"))
+        err := v.JSONWrite(w)
+        if err != nil {
+            return err
+        }
+        i++
+    }
+    w.Write([]byte("}"))
+    return nil
+}
+

@@ -44,7 +44,7 @@ const (
 )
 
 type Datamart struct {
-    SourceTableData *TableInfo
+    SourceTableData *Table
     SourceColumnProperties map[string]SourceColumnProperty
 }
 

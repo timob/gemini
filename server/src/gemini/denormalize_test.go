@@ -3,8 +3,9 @@ package gemini
 import (
     "mysql" 
     "testing"
-    "encoding/json"
     "fmt"
+    "bytes"
+    "io/ioutil"
 )
 
 var gt *testing.T
@@ -30,9 +31,11 @@ func TestDatamart(t *testing.T) {
     tables, err := dmart.PerformQueries()
     fatalOnError(err, t)
     
-    for name, table := range tables {
-        t.Logf("name: %s\n%v\n", name, table)
-    }
+    var buf bytes.Buffer
+    err = tables.JSONWrite(&buf)
+    fatalOnError(err, t)
+    js, err := ioutil.ReadAll(&buf)    
+    fmt.Println(string(js))        
 }
 
 func TestDatamart2(t *testing.T) {
@@ -59,9 +62,10 @@ func TestDatamart2(t *testing.T) {
     tables, err := dmart.PerformQueries()
     fatalOnError(err, t)
 
-    jsonData, err := json.Marshal(tables)
+    var buf bytes.Buffer
+    err = tables.JSONWrite(&buf)
     fatalOnError(err, t)
-
-    fmt.Printf("%s\n", jsonData)    
+    js, err := ioutil.ReadAll(&buf)    
+    fmt.Println(string(js))
 }
 
