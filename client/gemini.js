@@ -91,50 +91,39 @@ GeminiDb.prototype.newQuery  = function() {
     return new GeminiQuery(this);
 };
 
-
 //
 // GeminiResult Class
 //
-function GeminiResult(object) {
-    this.length = 0;   
-    for (var prop in object) {
-        if (prop == "length" || prop == "add") {
-            throw new Error('GeminiResult:: invalid column name');
-        }
-        this[prop] = object[prop];
-    }    
+function GeminiResult(db, tableName) {
+    this.subGroup = this[tableName] = new Array();
+    for (var i = 0; i < db[tableName].columnNames.length; i++) {
+        this[db[tableName].columnNames[i]] = new Array();    
+    }
 }
-
-GeminiResult.prototype.add = function(newRes) {
-    this[this.length] = newRes;
-    this.length++;
-};
 
 function printGeminiResult(result, depth) {
     if (arguments.length == 1) {
         depth = 0;
     }
 
-    var line = '';
-    for (var prop in result) {
-        if (prop == "length" || 
-            prop == "add" || 
-            (prop + "").search(/^[0-9]+$/) != -1)
-        {
-            continue;
-        }
-        for (var i = 0; i < (depth-1)*4; i++) {
-            line += ' ';
-        }
-        line += prop + ': ' + result[prop] + ' ';
+    if (result == null) {
+        return;
     }
-    if (line != '') {
-        print(line);
-    }
-
-    depth++;
-    for (var i = 0; i < result.length; i++) {
-        printGeminiResult(result[i], depth);
+    for (var i = 0; i < result.subGroup.length; i++) {
+        var line = '';
+        for (var prop in result) {
+            if (prop == "subGroup" || result[prop] == result.subGroup) {
+                continue;
+            }
+            for (var j = 0; j < (depth)*4; j++) {
+                line += ' ';
+            }
+            line += prop + ': ' + result[prop][i] + ' ';
+        }
+        if (line != '') {
+            print(line);
+        }        
+        printGeminiResult(result.subGroup[i], depth + 1);        
     }
 };
 
@@ -242,23 +231,35 @@ GeminiQuery.prototype.slicendice = function() {
         for (var i = 0; i < sorted.length; i++) {
             var tableName = this.fromTables[this.fromTables.length - 1 - depth];
             var row;
-            if (sorted[i] == -1) {
-                row = new Object();
-                row[this.db.idForTable(tableName)] = -1;
-            } else {
-                row = this.db[tableName].getRowMap(sorted[i]);
+            for (var j = 0; j < this.db[tableName].columnNames.length; j++) {
+                if (sorted[i] == -1) {
+                    parentRoot[this.db[tableName].columnNames[j]].push(null);
+                } else {
+                    parentRoot[this.db[tableName].columnNames[j]].push(
+                        this.db[tableName].data[sorted[i]][j]
+                    );
+                }
             }
-            var result = new GeminiResult(row); // object that is passed back to caller
-            parentRoot.add(result);
+            
             if (subGroups[sorted[i]].length > 0) {
+                // new result for subroup
+                var result = new GeminiResult(
+                    this.db, 
+                    this.fromTables[this.fromTables.length - depth]
+                );
+                // add subgroup to array in parent result
+                parentRoot[tableName].push(result); 
                 // process sub group for this value specifing this as the parent
                 // in recursive call
                 expand.call(this, subGroups[sorted[i]], result, depth - 1);
+            } else {
+                // no subgroups so add null to array in result
+                parentRoot[tableName].push(null);
             }
         }
     }
 
-    var results = new GeminiResult(new Object());
+    var results = new GeminiResult(this.db, this.fromTables[0]);
     expand.call(this, selectedArray, results, this.fromTables.length -1);
 
     if (cacheHash != null) {

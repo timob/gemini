@@ -15,17 +15,6 @@ function printobjectarray(a) {
     }
 }
 
-function testGeminiresult() {
-    var x = new GeminiResult(new Object());
-    var y = new GeminiResult({"hello": "world"});
-    x.add(y);
-    y = new GeminiResult({"goodbye": "world"});
-    x.add(y);
-    printGeminiResult(x);
-}
-
-testGeminiresult();
-
 function testGeminitable() {
     var x = new GeminiTable({
         ColumnNames: ["name", "age"],
