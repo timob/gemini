@@ -1,7 +1,7 @@
 package gemini
 
 import (
-    "mysql"
+    "github.com/timob/GoMySQL/src/mysql"
     "fmt"
     "sqlite"
     "errors"
