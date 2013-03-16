@@ -101,7 +101,11 @@ func (d *Datamart) SetupDimDefinitions() map[string]*DimensionDefinition {
     for name, prop := range d.SourceColumnProperties {
         if prop.PartOfDim != "" {
             if v, ok := dimDefs[prop.PartOfDim]; ok {
-                v.ExtraColumns = append(v.ExtraColumns, name)
+                for _, colName := range d.SourceTableData.ColumnNames {
+                    if colName == name {
+                        v.ExtraColumns = append(v.ExtraColumns, name)
+                    }
+                }
             }
         }
     }
